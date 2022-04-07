@@ -1,6 +1,7 @@
 'use strict'
 
 const Plugin = require('../../dd-trace/src/plugins/plugin')
+const url = require('url')
 const { storage } = require('../../datadog-core')
 const web = require('../../dd-trace/src/plugins/util/web')
 const { incomingHttpRequestStart } = require('../../dd-trace/src/appsec/gateway/channels')
@@ -58,6 +59,20 @@ class HttpServerPlugin extends Plugin {
       if (!context) return // Not created by a http.Server instance.
 
       web.wrapRes(context, context.req, context.res, context.res.end)()
+    })
+
+    this.addSub('datadog:tracer:trace:finish', ({ spans }) => {
+      if ((!this.config.blocklist && !this.config.allowlist) ||
+          spans.length === 0 ||
+          spans[0].name !== 'http.request') {
+        return
+      }
+      const urlParts = url.parse(spans[0].meta['http.url'])
+
+      if ((this.config.blocklist && this.config.blocklist.includes(urlParts.pathname)) ||
+          (this.config.allowlist && !this.config.blocklist.includes(urlParts.pathname))) {
+        spans.length = 0
+      }
     })
   }
 
